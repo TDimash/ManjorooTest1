@@ -81,7 +81,6 @@ function getTelegramUser() {
   };
 }
 
-// ─── Referral из startParam ───────────────────────────────────────────────────
 function getReferralCode() {
   const startParam = tg?.initDataUnsafe?.start_param;
   if (startParam) return startParam;
@@ -274,7 +273,7 @@ async function toggleAutoMode() {
   }
 }
 
-// ─── Referral ─────────────────────────────────────────────────────────────────
+// ─── Referral & Share ─────────────────────────────────────────────────────────
 function generateReferralLink() {
   if (!currentUser?.referralCode) return '';
   return `https://t.me/${BOT_USERNAME}?start=${currentUser.referralCode}`;
@@ -285,7 +284,7 @@ async function shareReferral() {
   if (!link) return;
 
   if (tg?.openTelegramLink) {
-    const text = encodeURIComponent(`Присоединяйся к Duck Ads и зарабатывай! ${link}`);
+    const text = encodeURIComponent(`Присоединяйся к Duck Ads и зарабатывай! 🚀`);
     tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${text}`);
     return;
   }
@@ -313,17 +312,54 @@ async function buyDoubleBoost() {
   }
 }
 
-// ─── Complete Task ────────────────────────────────────────────────────────────
-async function completeTask(taskId) {
+// ─── Задания (Tasks) с реальной логикой подписки и шаринга ────────────────────
+async function handleTaskClick(btn) {
+  const taskId = btn.getAttribute('data-task');
   if (!currentUser || !taskId) return;
-  const result = await apiCall('/api/complete-task', { userId: currentUser.userId, taskId });
-  if (result?.success) {
-    currentUser.balance        = result.balance;
-    currentUser.completedTasks = result.completedTasks;
-    updateUI();
-    tgAlert(`✅ Задание выполнено! +${formatMoney(result.reward)}`);
-  } else if (result && !result.success) {
-    tgAlert('ℹ️ ' + (result.message || 'Задание уже выполнено'));
+
+  // 1. Сценарий: ПОДПИСКА НА КАНАЛ
+  if (taskId === 'subscribe') {
+    // Сначала перекидываем юзера в канал
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink('https://t.me/TestChanneeellll');
+    } else {
+      window.open('https://t.me/TestChanneeellll', '_blank');
+    }
+
+    // Показываем подтверждение, давая пользователю время подписаться
+    setTimeout(async () => {
+      const result = await apiCall('/api/complete-task', { userId: currentUser.userId, taskId });
+      if (result?.success) {
+        currentUser.balance        = result.balance;
+        currentUser.completedTasks = result.completedTasks;
+        updateUI();
+        tgAlert(`✅ Успешно! Награда за подписку получена: +${formatMoney(result.reward)}`);
+      } else if (result) {
+        tgAlert(result.message || 'Ошибка проверки подписки.');
+      }
+    }, 2000);
+  } 
+  
+  // 2. Сценарий: ПОДЕЛИТЬСЯ С ДРУГОМ
+  else if (taskId === 'share') {
+    const link = generateReferralLink();
+    if (tg?.openTelegramLink) {
+      const text = encodeURIComponent(`Смотри, какую игру нашел! Кликай и зарабатывай 💰`);
+      tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${text}`);
+    } else {
+      try { await navigator.clipboard.writeText(link); } catch(e){}
+    }
+
+    // За шаринг даем награду сразу через секунду
+    setTimeout(async () => {
+      const result = await apiCall('/api/complete-task', { userId: currentUser.userId, taskId });
+      if (result?.success) {
+        currentUser.balance        = result.balance;
+        currentUser.completedTasks = result.completedTasks;
+        updateUI();
+        tgAlert(`✅ Задание выполнено! Награда начислена: +${formatMoney(result.reward)}`);
+      }
+    }, 1500);
   }
 }
 
@@ -471,7 +507,7 @@ function setupEventListeners() {
   document.getElementById('withdrawBtn')   ?.addEventListener('click', withdraw);
 
   document.querySelectorAll('.task-btn').forEach((btn) => {
-    btn.addEventListener('click', () => completeTask(btn.getAttribute('data-task')));
+    btn.addEventListener('click', () => handleTaskClick(btn));
   });
 }
 
