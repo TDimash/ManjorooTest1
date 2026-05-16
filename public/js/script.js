@@ -1,4 +1,4 @@
-// js/script.js — Full Original Logic with Fixes
+// js/script.js — Original Layout with Dynamic Admin Injection for 8772464641
 'use strict';
 
 const API_URL = 'https://manjorootest1-production.up.railway.app';
@@ -28,7 +28,6 @@ function tgAlert(msg) {
   else alert(msg);
 }
 
-// Корректное извлечение аватарки прямо из Telegram WebApp
 function getTelegramUser() {
   let user = tg?.initDataUnsafe?.user;
   if (user?.id) {
@@ -37,7 +36,6 @@ function getTelegramUser() {
       username: user.username || `${user.first_name}`,
       firstName: user.first_name || '',
       lastName: user.last_name || '',
-      // Забираем оригинальный photo_url, если Telegram его отдал
       avatarUrl: user.photo_url || '' 
     };
   }
@@ -51,6 +49,11 @@ async function apiCall(endpoint, data = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (res.status === 403) {
+      const errData = await res.json();
+      tgAlert(errData.error || 'Доступ запрещен');
+      return null;
+    }
     return await res.json();
   } catch (err) {
     console.error('API Error:', err);
@@ -77,6 +80,7 @@ async function initUser() {
     startAutoCollect();
     updateAdBlocksUI();
     startAdTimersUpdate();
+    checkAndInjectAdminPanel(); // Проверка на админа
     return true;
   }
   return false;
@@ -95,7 +99,6 @@ function updateUI() {
   setText('balanceTop', formatted);
   setText('walletBalance', formatted);
 
-  // Обновляем аватарку в шапке приложения
   const userAvatarImg = document.getElementById('userAvatar');
   if (userAvatarImg && currentUser.avatarUrl) {
     userAvatarImg.src = currentUser.avatarUrl;
@@ -119,7 +122,6 @@ function updateUI() {
   }
 }
 
-// Клик по главному балансу
 async function handleClick() {
   if (!currentUser) return;
   const res = await apiCall('/api/click', { userId: currentUser.userId });
@@ -131,7 +133,6 @@ async function handleClick() {
   }
 }
 
-// Автоматический сбор монет
 function startAutoCollect() {
   if (autoCollectInterval) clearInterval(autoCollectInterval);
   autoCollectInterval = setInterval(async () => {
@@ -154,7 +155,6 @@ async function toggleAutoMode() {
   }
 }
 
-// ОРИГИНАЛЬНАЯ ИНТЕГРАЦИЯ КНОПОК РЕКЛАМЫ ИЗ ТВОЕГО ФАЙЛА
 function updateAdBlocksUI() {
   if (!currentUser || !currentUser.adBlocksData) return;
 
@@ -166,7 +166,6 @@ function updateAdBlocksUI() {
     const limits = { 1: 10, 2: 5, 3: 3 };
     const maxViews = limits[block.id] || 5;
 
-    // Ищем контейнер с текстом статистики внутри родительской карточки
     const card = btn.closest('.card');
     if (card) {
       const statsEl = card.querySelector('.stats span:first-child');
@@ -193,7 +192,6 @@ function updateAdBlocksUI() {
   });
 }
 
-// Запуск оригинального плеера GigaPub при клике на кнопки
 async function watchAd(blockId) {
   if (isWatchingAd || !currentUser) return;
 
@@ -232,7 +230,6 @@ function startAdTimersUpdate() {
   }, 30000);
 }
 
-// Вывод средств с ТГ-диалогом адреса кошелька
 async function withdraw() {
   if (!currentUser) return;
   if (currentUser.balance < MIN_WITHDRAW) {
@@ -261,23 +258,25 @@ async function withdraw() {
   }
 }
 
-// Навигация по табам Mini App
+// Глобальная навигация табов через делегирование событий
 function setupNavigation() {
-  const navItems = document.querySelectorAll('.nav-item');
-  const pages = document.querySelectorAll('.page');
+  const nav = document.querySelector('.bottom-nav');
+  if (!nav) return;
 
-  navItems.forEach(item => {
-    item.addEventListener('click', async () => {
-      const pageId = item.getAttribute('data-page');
-      navItems.forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
+  nav.addEventListener('click', (e) => {
+    const item = e.target.closest('.nav-item');
+    if (!item) return;
 
-      pages.forEach(p => p.classList.remove('active'));
-      const target = document.getElementById(pageId);
-      if (target) target.classList.add('active');
+    const pageId = item.getAttribute('data-page');
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
 
-      if (pageId === 'friends') loadLeaderboard();
-    });
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const target = document.getElementById(pageId);
+    if (target) target.classList.add('active');
+
+    if (pageId === 'friends') loadLeaderboard();
+    if (pageId === 'adminPage') loadAdminStats();
   });
 }
 
@@ -320,13 +319,169 @@ function shareReferral() {
   }
 }
 
+// ВНЕДРЕНИЕ АДМИНКИ ДЛЯ ID 8772464641
+function checkAndInjectAdminPanel() {
+  if (!currentUser || currentUser.userId !== '8772464641') return;
+
+  // 1. Рисуем кнопку во вкладках
+  const nav = document.querySelector('.bottom-nav');
+  if (nav && !document.getElementById('adminTabBtn')) {
+    const adminBtn = document.createElement('div');
+    adminBtn.className = 'nav-item';
+    adminBtn.id = 'adminTabBtn';
+    adminBtn.setAttribute('data-page', 'adminPage');
+    adminBtn.innerHTML = `
+      <svg class="nav-icon" viewBox="0 0 24 24" style="stroke:#f59e0b;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <div style="color:#f59e0b; font-weight:600;">Админ</div>
+    `;
+    nav.appendChild(adminBtn);
+  }
+
+  // 2. Рисуем интерфейс самой админки
+  const appContainer = document.querySelector('.app');
+  if (appContainer && !document.getElementById('adminPage')) {
+    const adminPage = document.createElement('div');
+    adminPage.id = 'adminPage';
+    adminPage.className = 'page';
+    adminPage.innerHTML = `
+      <div class="card" style="border:1px solid #f59e0b; padding:15px; border-radius:14px; background:#17212B; margin-bottom:20px;">
+        <h3 style="color:#f59e0b; font-weight:800; margin-bottom:12px; text-align:center;">⚙️ УПРАВЛЕНИЕ ПРОЕКТОМ</h3>
+        
+        <div id="adminStatsBlock" style="font-size:13px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px; line-height:1.7;">
+          Загрузка метрик...
+        </div>
+        
+        <button class="btn" id="refreshAdminStats" style="background:#f59e0b; padding:10px; font-size:13px; margin-bottom:20px;">🔄 Обновить статистику</button>
+
+        <h4 style="color:#4ade80; margin-bottom:10px; font-weight:700;">💸 Активные заявки на вывод:</h4>
+        <div id="adminWithdrawalsList" style="display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; margin-bottom:20px; padding-right:4px;">
+          Нет заявок
+        </div>
+
+        <h4 style="color:#3b82f6; margin-bottom:10px; font-weight:700;">🔍 Поиск игрока:</h4>
+        <input type="text" id="adminSearchInput" placeholder="Введите ID или Username юзера" style="width:100%; padding:11px; background:#101820; border:1px solid #243242; color:#fff; border-radius:8px; font-size:13px; margin-bottom:10px;">
+        <button class="btn" id="adminSearchBtn" style="background:#3b82f6; padding:10px; font-size:13px;">Найти</button>
+
+        <div id="adminUserResult" style="margin-top:12px; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:12px; display:none; line-height:1.6;"></div>
+      </div>
+    `;
+    appContainer.appendChild(adminPage);
+
+    // Слушатели событий админки
+    document.getElementById('refreshAdminStats').addEventListener('click', loadAdminStats);
+    document.getElementById('adminSearchBtn').addEventListener('click', adminSearchUser);
+  }
+}
+
+// Загрузка данных админки с сервера
+async function loadAdminStats() {
+  if (!currentUser) return;
+  const res = await apiCall('/api/admin/stats', { adminId: currentUser.userId });
+  if (!res) return;
+
+  document.getElementById('adminStatsBlock').innerHTML = `
+    👥 Всего игроков в базе: <b style="color:#fff;">${res.totalUsers}</b><br>
+    💰 Баланс всех кошельков: <b style="color:#4ade80;">$${res.totalBalance.toFixed(4)}</b><br>
+    ⏳ Заявок на модерации: <b style="color:#f59e0b;">${res.pendingWithdrawals.length} шт.</b>
+  `;
+
+  const list = document.getElementById('adminWithdrawalsList');
+  if (res.pendingWithdrawals.length === 0) {
+    list.innerHTML = '<div style="color:#8EA2B1; text-align:center; font-size:12px; padding:10px;">Все заявки обработаны! 😎</div>';
+  } else {
+    list.innerHTML = '';
+    res.pendingWithdrawals.forEach(w => {
+      const row = document.createElement('div');
+      row.style.cssText = 'background:rgba(255,255,255,0.03); padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; border:1px solid rgba(255,255,255,0.05);';
+      row.innerHTML = `
+        <div style="font-size:11px; max-width:70%;">
+          <span style="font-weight:700; color:#fff;">@${w.username}</span> (${w.userId})<br>
+          Сумма: <b style="color:#4ade80; font-size:12px;">$${w.amount.toFixed(4)}</b><br>
+          Кошелек: <span style="color:#f59e0b; word-break:break-all;">${w.walletAddress}</span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="adm-act-btn" data-user="${w.userId}" data-wid="${w.withdrawalId}" data-act="approve" style="background:#4ade80; border:none; padding:6px 10px; border-radius:6px; font-weight:bold; cursor:pointer;">✅</button>
+          <button class="adm-act-btn" data-user="${w.userId}" data-wid="${w.withdrawalId}" data-act="reject" style="background:#ef4444; border:none; padding:6px 10px; border-radius:6px; font-weight:bold; color:#fff; cursor:pointer;">❌</button>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+
+    list.querySelectorAll('.adm-act-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const uId = btn.getAttribute('data-user');
+        const wId = btn.getAttribute('data-wid');
+        const act = btn.getAttribute('data-act');
+        
+        const confirmAct = confirm(act === 'approve' ? 'Подтвердить выплату?' : 'Отклонить заявку и вернуть баланс игроку?');
+        if (!confirmAct) return;
+
+        const actionRes = await apiCall('/api/admin/withdrawal-action', {
+          adminId: currentUser.userId,
+          userId: uId,
+          withdrawalId: wId,
+          action: act
+        });
+
+        if (actionRes && actionRes.success) {
+          loadAdminStats();
+        }
+      });
+    });
+  }
+}
+
+// Поиск и менеджмент юзера в панели админа
+async function adminSearchUser() {
+  const query = document.getElementById('adminSearchInput').value.trim();
+  if (!query) return;
+
+  const res = await apiCall('/api/admin/user-search', { adminId: currentUser.userId, query });
+  const block = document.getElementById('adminUserResult');
+  block.style.display = 'block';
+
+  if (!res || !res.success) {
+    block.innerHTML = '<div style="color:#ef4444; text-align:center;">Игрок не найден</div>';
+    return;
+  }
+
+  const u = res.user;
+  block.innerHTML = `
+    👤 Имя: <b>${u.username}</b> (${u.userId})<br>
+    💵 Баланс: <b>$${u.balance.toFixed(4)}</b><br>
+    📊 Уровень: <b>${u.level} (xp: ${u.xp})</b><br>
+    🛑 Статус бана: <b style="color:${u.isBanned ? '#ef4444' : '#4ade80'}">${u.isBanned ? 'ЗАБАНЕН' : 'АКТИВЕН'}</b><br><br>
+    <div style="display:flex; gap:8px;">
+      <button class="btn" id="admUpdateBan" style="background:${u.isBanned ? '#4ade80' : '#ef4444'}; padding:6px; font-size:11px;">${u.isBanned ? 'Разбанить' : 'Забанить'}</button>
+      <button class="btn" id="admGiveBonus" style="background:#3b82f6; padding:6px; font-size:11px;">Выдать +$1.00</button>
+    </div>
+  `;
+
+  document.getElementById('admUpdateBan').addEventListener('click', async () => {
+    const updateRes = await apiCall('/api/admin/user-update', {
+      adminId: currentUser.userId,
+      targetUserId: u.userId,
+      isBanned: !u.isBanned
+    });
+    if (updateRes && updateRes.success) adminSearchUser();
+  });
+
+  document.getElementById('admGiveBonus').addEventListener('click', async () => {
+    const updateRes = await apiCall('/api/admin/user-update', {
+      adminId: currentUser.userId,
+      targetUserId: u.userId,
+      balance: u.balance + 1.00
+    });
+    if (updateRes && updateRes.success) adminSearchUser();
+  });
+}
+
 function initEventListeners() {
   document.getElementById('balance')?.addEventListener('click', handleClick);
   document.getElementById('autoBtn')?.addEventListener('click', toggleAutoMode);
   document.getElementById('inviteBtn')?.addEventListener('click', shareReferral);
   document.getElementById('withdrawBtn')?.addEventListener('click', withdraw);
 
-  // Навешиваем обработчик клика на ТВОИ ОРИГИНАЛЬНЫЕ КНОПКИ РЕКЛАМЫ из разметки HTML
   document.querySelectorAll('.watch-ad-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const blockId = Number(btn.getAttribute('data-block'));

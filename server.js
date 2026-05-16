@@ -1,4 +1,4 @@
-// server.js — Original Ads Logic + Secure Balancing & Withdrawal
+// server.js — Ads + Secure Withdrawals + Strict ID Admin Panel (8772464641)
 'use strict';
 
 const express = require('express');
@@ -15,12 +15,12 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 8080;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://mongo:IyJfyncoxZBZGMbkEnCJHlbPtcBPxTQR@autorack.proxy.rlwy.net:56739';
 
+const ADMIN_ID            = '8772464641'; // Твой личный Telegram ID
 const MIN_WITHDRAW        = 5;
 const REFERRAL_BONUS      = 0.005;
 const LEVEL_UP_BONUS_BASE = 0.01;
 const BASE_PASSIVE        = 0.0001;
 
-// Награды в долларах соразмерно кликам!
 const AD_BLOCKS_CONFIG = {
   1: { reward: 0.002, limit: 10, cooldown: 2 * 60 * 60 * 1000 },
   2: { reward: 0.003, limit: 5,  cooldown: 4 * 60 * 60 * 1000 },
@@ -39,12 +39,12 @@ const userSchema = new mongoose.Schema({
   level:               { type: Number, default: 1 },
   xp:                  { type: Number, default: 0 },
   autoMode:            { type: Boolean, default: false },
+  isBanned:            { type: Boolean, default: false }, // Кнопка бана в админке
   referralCode:        { type: String, unique: true, index: true },
   referredBy:          { type: String, default: null },
   referrals:           [{ type: String }],
   completedTasks:      [{ type: String }],
   
-  // Сохраняем оригинальную структуру блоков рекламы
   adBlocksData: [{
     id:        Number,
     views:     { type: Number, default: 0 },
@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema({
   withdrawals: [{
     amount:        { type: Number, required: true },
     walletAddress: { type: String, required: true },
-    status:        { type: String, default: 'pending' },
+    status:        { type: String, default: 'pending' }, // pending, approved, rejected
     createdAt:     { type: Date, default: Date.now }
   }],
   createdAt: { type: Date, default: Date.now }
@@ -67,6 +67,17 @@ const User = mongoose.model('User', userSchema);
 const getLevelReward = (level) => 0.001 + (level - 1) * 0.0008;
 const getXpNeeded    = (level) => 100 + (level - 1) * 50;
 
+// Middleware проверки на бан для обычных действий игрока
+async function checkBanStatus(req, res, next) {
+  const { userId } = req.body;
+  if (!userId) return next();
+  const user = await User.findOne({ userId });
+  if (user && user.isBanned) {
+    return res.status(403).json({ error: 'Ваш аккаунт заблокирован за нарушение правил!' });
+  }
+  next();
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -75,7 +86,6 @@ app.post('/api/user', async (req, res) => {
     const { userId, username, firstName, lastName, avatarUrl, referredBy } = req.body;
     let user = await User.findOne({ userId });
 
-    // Самая надежная генерация ссылки на аватарку (если нет родной, берем красивую по UI букв имени или юзернейму)
     let finalAvatar = avatarUrl;
     if (!finalAvatar || finalAvatar.includes('pravatar.cc')) {
       finalAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username || firstName || 'U')}&background=2AABEE&color=fff&size=128`;
@@ -83,7 +93,6 @@ app.post('/api/user', async (req, res) => {
 
     if (!user) {
       const refCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      
       const initialBlocks = [
         { id: 1, views: 0, nextReset: null, lastAdTime: null },
         { id: 2, views: 0, nextReset: null, lastAdTime: null },
@@ -109,7 +118,6 @@ app.post('/api/user', async (req, res) => {
       }
       await user.save();
     } else {
-      // Если аватарка обновилась на стороне клиента или была дефолтной — перезаписываем
       if (avatarUrl && user.avatarUrl !== avatarUrl && !avatarUrl.includes('pravatar.cc')) {
         user.avatarUrl = avatarUrl;
         await user.save();
@@ -121,8 +129,7 @@ app.post('/api/user', async (req, res) => {
   }
 });
 
-// Клик
-app.post('/api/click', async (req, res) => {
+app.post('/api/click', checkBanStatus, async (req, res) => {
   try {
     const { userId } = req.body;
     const user = await User.findOne({ userId });
@@ -149,8 +156,7 @@ app.post('/api/click', async (req, res) => {
   }
 });
 
-// Пассивный сбор авто-режима
-app.post('/api/auto-collect', async (req, res) => {
+app.post('/api/auto-collect', checkBanStatus, async (req, res) => {
   try {
     const { userId, seconds } = req.body;
     const user = await User.findOne({ userId });
@@ -172,7 +178,7 @@ app.post('/api/auto-collect', async (req, res) => {
   }
 });
 
-app.post('/api/toggle-auto', async (req, res) => {
+app.post('/api/toggle-auto', checkBanStatus, async (req, res) => {
   try {
     const { userId } = req.body;
     const user = await User.findOne({ userId });
@@ -185,8 +191,7 @@ app.post('/api/toggle-auto', async (req, res) => {
   }
 });
 
-// ОРИГИНАЛЬНЫЙ РОУТ ДЛЯ ПРОСМОТРА РЕКЛАМЫ (С ИСПРАВЛЕННЫМ ЦЕНТОВЫМ БАЛАНСОМ)
-app.post('/api/watch-ad', async (req, res) => {
+app.post('/api/watch-ad', checkBanStatus, async (req, res) => {
   try {
     const { userId, blockId } = req.body;
     const bId = Number(blockId);
@@ -232,15 +237,14 @@ app.post('/api/watch-ad', async (req, res) => {
 
 app.get('/api/leaderboard', async (req, res) => {
   try {
-    const top = await User.find().sort({ totalEarned: -1 }).limit(50).select('username avatarUrl totalEarned level');
+    const top = await User.find({ isBanned: false }).sort({ totalEarned: -1 }).limit(50).select('username avatarUrl totalEarned level');
     res.json(top);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Заморозка выплат с запросом кошелька
-app.post('/api/withdraw', async (req, res) => {
+app.post('/api/withdraw', checkBanStatus, async (req, res) => {
   try {
     const { userId, amount, walletAddress } = req.body;
     const user = await User.findOne({ userId });
@@ -259,6 +263,101 @@ app.post('/api/withdraw', async (req, res) => {
     
     await user.save();
     res.json({ success: true, message: 'Заявка отправлена на модерацию!', balance: user.balance });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ─── ⚙️ СТРОГАЯ АДМИН ПАНЕЛЬ (КАНАЛЫ БЕЗОПАСНОСТИ ДЛЯ ИД 8772464641) ───────────────────
+
+function verifyAdmin(req, res, next) {
+  const { adminId } = req.body;
+  if (adminId !== ADMIN_ID) {
+    return res.status(403).json({ error: 'Критическая ошибка безопасности: Доступ запрещен!' });
+  }
+  next();
+}
+
+// 1. Получение общей статистики и списка активных заявок на вывод
+app.post('/api/admin/stats', verifyAdmin, async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    
+    const balanceAgg = await User.aggregate([{ $group: { _id: null, sum: { $sum: "$balance" } } }]);
+    const totalBalance = balanceAgg[0]?.sum || 0;
+
+    // Вытаскиваем все активные заявки на вывод со статусом pending
+    const pendingWithdrawals = await User.aggregate([
+      { $unwind: "$withdrawals" },
+      { $match: { "withdrawals.status": "pending" } },
+      { $project: {
+          _id: 0,
+          userId: "$userId",
+          username: "$username",
+          withdrawalId: "$withdrawals._id",
+          amount: "$withdrawals.amount",
+          walletAddress: "$withdrawals.walletAddress",
+          createdAt: "$withdrawals.createdAt"
+      }}
+    ]);
+
+    res.json({ totalUsers, totalBalance, pendingWithdrawals });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Действие с заявкой на вывод (Одобрить / Отклонить)
+app.post('/api/admin/withdrawal-action', verifyAdmin, async (req, res) => {
+  try {
+    const { userId, withdrawalId, action } = req.body; // action: 'approve' или 'reject'
+    const user = await User.findOne({ userId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const item = user.withdrawals.id(withdrawalId);
+    if (!item || item.status !== 'pending') {
+      return res.status(400).json({ error: 'Заявка не найдена или уже обработана!' });
+    }
+
+    if (action === 'approve') {
+      item.status = 'approved';
+    } else if (action === 'reject') {
+      item.status = 'rejected';
+      user.balance += item.amount; // возвращаем деньги на баланс игрока при отклонении
+    }
+
+    await user.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Поиск пользователя по ID или Username
+app.post('/api/admin/user-search', verifyAdmin, async (req, res) => {
+  try {
+    const { query } = req.body;
+    const user = await User.findOne({ $or: [{ userId: query }, { username: query }] });
+    if (!user) return res.json({ success: false, message: 'Пользователь не найден' });
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Модификация данных юзера (Бан / Изменение баланса)
+app.post('/api/admin/user-update', verifyAdmin, async (req, res) => {
+  try {
+    const { targetUserId, balance, isBanned } = req.body;
+    const user = await User.findOne({ userId: targetUserId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (balance !== undefined) user.balance = Number(balance);
+    if (isBanned !== undefined) user.isBanned = Boolean(isBanned);
+
+    await user.save();
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
