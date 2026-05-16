@@ -1,4 +1,4 @@
-// server.js — Full Functional with GigaPub Ads, secure freeze & subscription checks
+// server.js — Full Functional with GigaPub Ads, secure freeze, subscription & real Telegram avatar fetch
 'use strict';
 
 const express = require('express');
@@ -29,7 +29,6 @@ const BASE_PASSIVE        = 0.0001;
 
 const TASK_REWARDS = Object.freeze({ subscribe: 0.01, share: 0.005 });
 
-// Конфигурация рекламных блоков из оригинала
 const AD_BLOCKS_CONFIG = [
   { id: 1, baseReward: 0.002, limit: 10, cooldownHours: 2 },
   { id: 2, baseReward: 0.003, limit: 5,  cooldownHours: 4 },
@@ -65,6 +64,38 @@ async function checkTelegramSubscription(userId) {
   }
 }
 
+// НОВОЕ: Функция запроса реальной аватарки пользователя через Бота
+async function fetchTelegramAvatar(userId) {
+  if (!userId || userId === 'demo_dev_local') return null;
+  try {
+    // 1. Запрашиваем список фото профиля
+    const photosUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getUserProfilePhotos?user_id=${userId}&limit=1`;
+    const resPhotos = await fetch(photosUrl);
+    const dataPhotos = await resPhotos.json();
+    
+    if (!dataPhotos.ok || !dataPhotos.result || dataPhotos.result.total_count === 0) {
+      return null; // У пользователя нет аватарок или скрыты
+    }
+    
+    // Берем самое маленькое/среднее разрешение (индекс 0 или 1) для экономии трафика
+    const photosArr = dataPhotos.result.photos[0];
+    const fileId = photosArr[0].file_id; 
+    
+    // 2. Получаем путь к файлу на серверах Telegram
+    const fileUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`;
+    const resFile = await fetch(fileUrl);
+    const dataFile = await resFile.json();
+    
+    if (!dataFile.ok || !dataFile.result?.file_path) return null;
+    
+    // 3. Формируем готовую рабочую ссылку на аватарку
+    return `https://api.telegram.org/file/bot${BOT_TOKEN}/${dataFile.result.file_path}`;
+  } catch (err) {
+    console.error('Ошибка получения аватара из TG:', err.message);
+    return null;
+  }
+}
+
 // ─── Schema ───────────────────────────────────────────────────────────────────
 const userSchema = new mongoose.Schema(
   {
@@ -88,7 +119,6 @@ const userSchema = new mongoose.Schema(
     passiveIncome:        { type: Number, default: BASE_PASSIVE },
     createdAt:            { type: Date,   default: Date.now },
     
-    // РЕКЛАМА: Данные о просмотрах рекламных блоков
     adBlocksData: [{
       id:        Number,
       views:     { type: Number, default: 0 },
@@ -135,14 +165,17 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/api/user', asyncHandler(async (req, res) => {
-  const { userId, username, firstName, lastName, avatarUrl, referredBy } = req.body;
+  const { userId, username, firstName, lastName, referredBy } = req.body;
   if (!validateUserId(userId)) return res.status(400).json({ error: 'Invalid userId' });
 
   let user = await User.findOne({ userId });
+  
+  // Проверяем/обновляем аватарку при каждом входе в приложение, чтобы она всегда была актуальной
+  const realTgAvatar = await fetchTelegramAvatar(userId);
+  const fallbackAvatar = `https://i.pravatar.cc/100?u=${userId}`;
+
   if (!user) {
     const referralCode = await generateUniqueReferralCode();
-    
-    // Инициализируем пустые рекламные блоки для нового юзера
     const initialAdBlocks = AD_BLOCKS_CONFIG.map(b => ({ id: b.id, views: 0, nextReset: null, lastAdTime: null }));
 
     user = new User({
@@ -150,7 +183,7 @@ app.post('/api/user', asyncHandler(async (req, res) => {
       username: username || firstName || 'User',
       firstName: firstName || '',
       lastName:  lastName  || '',
-      avatarUrl: avatarUrl || `https://i.pravatar.cc/100?u=${userId}`,
+      avatarUrl: realTgAvatar || fallbackAvatar, // Используем реальную, если получили
       referralCode,
       referredBy: referredBy || null,
       passiveIncome: BASE_PASSIVE,
@@ -167,6 +200,12 @@ app.post('/api/user', asyncHandler(async (req, res) => {
       }
     }
     await user.save();
+  } else {
+    // Если пользователь уже существует, но аватарка в базе старая (или сгенерированный кот), обновляем её
+    if (realTgAvatar && user.avatarUrl !== realTgAvatar) {
+      user.avatarUrl = realTgAvatar;
+      await user.save();
+    }
   }
   res.json(user);
 }));
@@ -252,7 +291,6 @@ app.post('/api/buy-double', asyncHandler(async (req, res) => {
   res.json({ success: true, balance: user.balance, doubleIncomeActive: true, expiresAt: user.doubleIncomeExpires });
 }));
 
-// РЕКЛАМА: Эндпоинт обработки успешного просмотра рекламы
 app.post('/api/watch-ad', asyncHandler(async (req, res) => {
   const { userId, blockId } = req.body;
   const bId = Number(blockId);
@@ -263,7 +301,6 @@ app.post('/api/watch-ad', asyncHandler(async (req, res) => {
   const user = await User.findOne({ userId });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // Создаем или ищем структуру блока у юзера
   let block = user.adBlocksData.find(b => b.id === bId);
   if (!block) {
     block = { id: bId, views: 0, nextReset: null, lastAdTime: null };
@@ -272,30 +309,25 @@ app.post('/api/watch-ad', asyncHandler(async (req, res) => {
 
   const now = new Date();
 
-  // Сброс лимитов по времени кулдауна
   if (block.nextReset && now > new Date(block.nextReset)) {
     block.views = 0;
     block.nextReset = null;
   }
 
-  // Проверка лимита показов
   if (block.views >= config.limit) {
     return res.json({ success: false, message: 'Лимит блока исчерпан! Ждите сброса таймера.' });
   }
 
-  // Защита от спама кликами (минимум 10 сек между рекламами)
   if (block.lastAdTime && (now.getTime() - new Date(block.lastAdTime).getTime() < 10000)) {
     return res.json({ success: false, message: 'Слишком частые просмотры!' });
   }
 
-  // Начисляем награду за просмотр (Буст DoubleIncome здесь удваивает награду!)
   let reward = config.baseReward;
   if (isDoubleActive(user)) reward *= 2;
 
   block.views += 1;
   block.lastAdTime = now;
 
-  // Если достигли лимита просмотров, включаем блокировку на X часов
   if (block.views >= config.limit) {
     block.nextReset = new Date(now.getTime() + config.cooldownHours * 60 * 60 * 1000);
   }
