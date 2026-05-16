@@ -1,4 +1,4 @@
-// server.js — Refactored by Security & Architecture Audit
+// server.js — Full Functional with GigaPub Ads, secure freeze & subscription checks
 'use strict';
 
 const express = require('express');
@@ -6,7 +6,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-const path = require('path');
 
 const app = express();
 
@@ -28,8 +27,14 @@ const REFERRAL_BONUS      = 0.005;
 const LEVEL_UP_BONUS_BASE = 0.01;
 const BASE_PASSIVE        = 0.0001;
 
-// БАГ ИСПРАВЛЕН: Теперь награды соразмерны центам, а не тысячам долларов!
 const TASK_REWARDS = Object.freeze({ subscribe: 0.01, share: 0.005 });
+
+// Конфигурация рекламных блоков из оригинала
+const AD_BLOCKS_CONFIG = [
+  { id: 1, baseReward: 0.002, limit: 10, cooldownHours: 2 },
+  { id: 2, baseReward: 0.003, limit: 5,  cooldownHours: 4 },
+  { id: 3, baseReward: 0.005, limit: 3,  cooldownHours: 6 }
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getLevelReward  = (level) => 0.001 + (level - 1) * 0.0008;
@@ -44,7 +49,7 @@ async function generateUniqueReferralCode() {
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;
   }
-  throw new Error('Could not generate unique referral code after 20 attempts');
+  throw new Error('Could not generate unique referral code');
 }
 
 async function checkTelegramSubscription(userId) {
@@ -54,8 +59,7 @@ async function checkTelegramSubscription(userId) {
     const response = await fetch(url);
     const data = await response.json();
     if (!data.ok) return false;
-    const status = data.result?.status;
-    return ['creator', 'administrator', 'member'].includes(status);
+    return ['creator', 'administrator', 'member'].includes(data.result?.status);
   } catch (err) {
     return false;
   }
@@ -84,7 +88,14 @@ const userSchema = new mongoose.Schema(
     passiveIncome:        { type: Number, default: BASE_PASSIVE },
     createdAt:            { type: Date,   default: Date.now },
     
-    // Новое поле: История выводов средств с заморозкой баланса
+    // РЕКЛАМА: Данные о просмотрах рекламных блоков
+    adBlocksData: [{
+      id:        Number,
+      views:     { type: Number, default: 0 },
+      nextReset: { type: Date, default: null },
+      lastAdTime:{ type: Date, default: null }
+    }],
+
     withdrawals: [{
       amount:         { type: Number, required: true },
       walletAddress:  { type: String, required: true },
@@ -106,7 +117,7 @@ app.use(express.static('public'));
 
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 150,
   message: { error: 'Too many requests, please slow down.' },
 });
 app.use('/api/', globalLimiter);
@@ -130,6 +141,10 @@ app.post('/api/user', asyncHandler(async (req, res) => {
   let user = await User.findOne({ userId });
   if (!user) {
     const referralCode = await generateUniqueReferralCode();
+    
+    // Инициализируем пустые рекламные блоки для нового юзера
+    const initialAdBlocks = AD_BLOCKS_CONFIG.map(b => ({ id: b.id, views: 0, nextReset: null, lastAdTime: null }));
+
     user = new User({
       userId,
       username: username || firstName || 'User',
@@ -139,6 +154,7 @@ app.post('/api/user', asyncHandler(async (req, res) => {
       referralCode,
       referredBy: referredBy || null,
       passiveIncome: BASE_PASSIVE,
+      adBlocksData: initialAdBlocks
     });
 
     if (referredBy && typeof referredBy === 'string') {
@@ -236,6 +252,67 @@ app.post('/api/buy-double', asyncHandler(async (req, res) => {
   res.json({ success: true, balance: user.balance, doubleIncomeActive: true, expiresAt: user.doubleIncomeExpires });
 }));
 
+// РЕКЛАМА: Эндпоинт обработки успешного просмотра рекламы
+app.post('/api/watch-ad', asyncHandler(async (req, res) => {
+  const { userId, blockId } = req.body;
+  const bId = Number(blockId);
+  
+  const config = AD_BLOCKS_CONFIG.find(c => c.id === bId);
+  if (!config) return res.status(400).json({ error: 'Unknown ad block' });
+
+  const user = await User.findOne({ userId });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  // Создаем или ищем структуру блока у юзера
+  let block = user.adBlocksData.find(b => b.id === bId);
+  if (!block) {
+    block = { id: bId, views: 0, nextReset: null, lastAdTime: null };
+    user.adBlocksData.push(block);
+  }
+
+  const now = new Date();
+
+  // Сброс лимитов по времени кулдауна
+  if (block.nextReset && now > new Date(block.nextReset)) {
+    block.views = 0;
+    block.nextReset = null;
+  }
+
+  // Проверка лимита показов
+  if (block.views >= config.limit) {
+    return res.json({ success: false, message: 'Лимит блока исчерпан! Ждите сброса таймера.' });
+  }
+
+  // Защита от спама кликами (минимум 10 сек между рекламами)
+  if (block.lastAdTime && (now.getTime() - new Date(block.lastAdTime).getTime() < 10000)) {
+    return res.json({ success: false, message: 'Слишком частые просмотры!' });
+  }
+
+  // Начисляем награду за просмотр (Буст DoubleIncome здесь удваивает награду!)
+  let reward = config.baseReward;
+  if (isDoubleActive(user)) reward *= 2;
+
+  block.views += 1;
+  block.lastAdTime = now;
+
+  // Если достигли лимита просмотров, включаем блокировку на X часов
+  if (block.views >= config.limit) {
+    block.nextReset = new Date(now.getTime() + config.cooldownHours * 60 * 60 * 1000);
+  }
+
+  user.balance += reward;
+  user.totalEarned += reward;
+  
+  await user.save();
+
+  res.json({
+    success: true,
+    reward,
+    balance: user.balance,
+    adBlocksData: user.adBlocksData
+  });
+}));
+
 app.post('/api/complete-task', asyncHandler(async (req, res) => {
   const { userId, taskId } = req.body;
   if (!Object.prototype.hasOwnProperty.call(TASK_REWARDS, taskId)) return res.status(400).json({ error: 'Unknown task' });
@@ -264,7 +341,6 @@ app.get('/api/leaderboard', asyncHandler(async (req, res) => {
   res.json(leaderboard);
 }));
 
-// ЛОГИКА ИЗМЕНЕНА: Деньги не списываются вникуда, а «замораживаются» до одобрения админом
 app.post('/api/withdraw', asyncHandler(async (req, res) => {
   const { userId, amount, walletAddress } = req.body;
   if (!validateUserId(userId)) return res.status(400).json({ error: 'Invalid userId' });
@@ -278,7 +354,6 @@ app.post('/api/withdraw', asyncHandler(async (req, res) => {
   if (parsedAmount < MIN_WITHDRAW) return res.json({ success: false, message: `Минимум для вывода: $${MIN_WITHDRAW}` });
   if (user.balance < parsedAmount) return res.json({ success: false, message: 'Недостаточно средств на балансе' });
 
-  // Списываем с баланса и кладем в массив выводов со статусом pending
   user.balance -= parsedAmount;
   user.withdrawals.push({
     amount: parsedAmount,
@@ -287,8 +362,6 @@ app.post('/api/withdraw', asyncHandler(async (req, res) => {
   });
 
   await user.save();
-  console.log(`[Заявка на вывод] Игрок ${userId} запросил $${parsedAmount} на кошелек ${walletAddress}`);
-
   res.json({ success: true, message: 'Заявка отправлена администратору на проверку!', balance: user.balance });
 }));
 

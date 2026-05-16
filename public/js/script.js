@@ -6,8 +6,13 @@ const MIN_WITHDRAW = 5;
 
 const tg = window.Telegram?.WebApp ?? null;
 let currentUser        = null;
-let autoCollectInterval = null;
 let isClickPending     = false;
+
+const AD_BLOCKS_CONFIG = [
+  { id: 1, baseReward: 0.002, limit: 10, cooldownHours: 2 },
+  { id: 2, baseReward: 0.003, limit: 5,  cooldownHours: 4 },
+  { id: 3, baseReward: 0.005, limit: 3,  cooldownHours: 6 }
+];
 
 if (tg) {
   try { tg.expand(); tg.enableClosingConfirmation(); } catch (e) {}
@@ -26,16 +31,6 @@ function tgAlert(msg) {
   else alert(msg);
 }
 
-function showError(message) {
-  if (document.querySelector('.twa-error-toast')) return;
-  const div = document.createElement('div');
-  div.className = 'twa-error-toast';
-  div.textContent = message;
-  div.style.cssText = 'position:fixed;bottom:100px;left:20px;right:20px;background:#ef4444;color:#fff;padding:10px;border-radius:10px;text-align:center;z-index:1000;';
-  document.body.appendChild(div);
-  setTimeout(() => div.remove(), 3000);
-}
-
 function getTelegramUser() {
   try {
     const user = tg?.initDataUnsafe?.user;
@@ -52,10 +47,6 @@ function getTelegramUser() {
   return { userId: 'demo_dev_local', username: 'Demo User', firstName: 'Demo', lastName: 'User', avatarUrl: 'https://i.pravatar.cc/100?u=demo' };
 }
 
-function getReferralCode() {
-  return tg?.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('ref') || null;
-}
-
 async function apiCall(endpoint, data = {}) {
   try {
     const res = await fetch(`${API_URL}${endpoint}`, {
@@ -65,7 +56,6 @@ async function apiCall(endpoint, data = {}) {
     });
     return await res.json();
   } catch (err) {
-    showError('Ошибка соединения');
     return null;
   }
 }
@@ -78,11 +68,13 @@ async function initUser() {
     firstName: telegramUser.firstName,
     lastName: telegramUser.lastName,
     avatarUrl: telegramUser.avatarUrl,
-    referredBy: getReferralCode(),
+    referredBy: tg?.initDataUnsafe?.start_param || null,
   });
   if (result && !result.error) {
     currentUser = result;
     updateUI();
+    generateCards(); // Генерируем карточки рекламы на основе данных юзера
+    
     if (currentUser.autoMode) setInterval(async () => {
       const r = await apiCall('/api/auto-collect', { userId: currentUser.userId });
       if (r?.success && r.earnings > 0) { currentUser.balance = r.balance; updateUI(); }
@@ -151,6 +143,93 @@ async function handleClick() {
   } finally { isClickPending = false; }
 }
 
+// РЕКЛАМА: Интеграция вызова плеера GigaPub при клике на блок рекламы
+function watchAdBlock(blockId) {
+  if (!currentUser) return;
+  
+  const config = AD_BLOCKS_CONFIG.find(c => c.id === blockId);
+  const blockData = currentUser.adBlocksData?.find(b => b.id === blockId) || { views: 0, nextReset: null };
+
+  if (blockData.nextReset && new Date() < new Date(blockData.nextReset)) {
+    tgAlert("⏳ Лимит этого блока исчерпан! Посмотрите другие блоки или зайдите позже.");
+    return;
+  }
+
+  // Проверяем наличие рекламного SDK GigaPub
+  if (typeof window.showGigapubVideoAd !== 'function') {
+    tgAlert("⏳ Реклама временно подгружается, попробуйте еще раз через секунду.");
+    return;
+  }
+
+  // Вызываем нативное окно плеера рекламы
+  window.showGigapubVideoAd({
+    onClose: async function(success) {
+      if (success) {
+        // Реклама досмотрена до конца — шлем запрос бэкенду на деньги
+        const res = await apiCall('/api/watch-ad', { userId: currentUser.userId, blockId: blockId });
+        if (res?.success) {
+          currentUser.balance = res.balance;
+          currentUser.adBlocksData = res.adBlocksData;
+          updateUI();
+          generateCards(); // Перерисовываем карточки, обновляя прогресс-бары
+          tgAlert(`🎬 Реклама просмотрена! Начислено: +${formatMoney(res.reward)}`);
+        } else if (res) {
+          tgAlert(res.message);
+        }
+      } else {
+        tgAlert("❌ Вы закрыли рекламу слишком рано! Награда не начислена.");
+      }
+    }
+  });
+}
+
+// РЕКЛАМА: Генерация динамических рекламных карточек с прогресс-барами
+function generateCards() {
+  const container = document.getElementById('cards');
+  if (!container) return;
+  container.innerHTML = '';
+
+  AD_BLOCKS_CONFIG.forEach((c) => {
+    const blockData = currentUser?.adBlocksData?.find(b => b.id === c.id) || { views: 0, nextReset: null };
+    
+    let progressPercent = (blockData.views / c.limit) * 100;
+    let titleStatus = `Посмотрено: ${blockData.views}/${c.limit}`;
+    let isLocked = false;
+
+    if (blockData.nextReset && new Date() < new Date(blockData.nextReset)) {
+      isLocked = true;
+      const diffMs = new Date(blockData.nextReset) - new Date();
+      const diffMins = Math.ceil(diffMs / 60000);
+      titleStatus = `Блок заблокирован на ${diffMins} мин.`;
+      progressPercent = 100;
+    }
+
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.style.cursor = 'pointer';
+    if (isLocked) div.style.opacity = '0.5';
+
+    let currentReward = c.baseReward;
+    if (currentUser && isDoubleActive(currentUser)) currentReward *= 2;
+
+    div.innerHTML = `
+      <div class="card-title">
+        <span>🔥 Рекламный блок ${c.id}</span>
+        <span style="color:#4ade80">+${formatMoney(currentReward)}</span>
+      </div>
+      <div class="stats">
+        <span>${titleStatus}</span>
+      </div>
+      <div class="small-bar">
+        <div class="small-fill" style="width:${progressPercent}%; background: ${isLocked ? '#ef4444' : '#2AABEE'}"></div>
+      </div>
+    `;
+
+    div.addEventListener('click', () => watchAdBlock(c.id));
+    container.appendChild(div);
+  });
+}
+
 async function handleTaskClick(btn) {
   const taskId = btn.getAttribute('data-task');
   if (!currentUser || !taskId) return;
@@ -174,7 +253,6 @@ async function handleTaskClick(btn) {
   }
 }
 
-// ФУНКЦИЯ ВЫВОДА СРЕДСТВ ИЗМЕНЕНА: Запрашивает кошелек перед созданием заявки
 async function withdraw() {
   if (!currentUser) return;
   if (currentUser.balance < MIN_WITHDRAW) {
@@ -182,7 +260,6 @@ async function withdraw() {
     return;
   }
 
-  // Спрашиваем адрес кошелька у пользователя
   const wallet = prompt("Введите адрес вашего TON/USDT кошелька для вывода:");
   if (!wallet || wallet.trim() === "") {
     tgAlert("❌ Вывод отменен: необходимо указать кошелек.");
@@ -202,18 +279,6 @@ async function withdraw() {
   } else if (result) {
     tgAlert(result.message || 'Ошибка создания заявки');
   }
-}
-
-function generateCards() {
-  const container = document.getElementById('cards');
-  if (!container) return;
-  const cards = [{ title: '🔥 Рекламный блок 1', income: 0.002, progress: 45 }, { title: '⚡ Рекламный блок 2', income: 0.003, progress: 23 }, { title: '💎 Рекламный блок 3', income: 0.005, progress: 67 }];
-  container.innerHTML = '';
-  cards.forEach((c) => {
-    const div = document.createElement('div'); div.className = 'card'; div.style.cursor = 'pointer';
-    div.innerHTML = `<div class="card-title"><span>${c.title}</span><span style="color:#4ade80">${formatMoney(c.income)}</span></div><div class="small-bar"><div class="small-fill" style="width:${c.progress}%"></div></div>`;
-    div.addEventListener('click', handleClick); container.appendChild(div);
-  });
 }
 
 async function init() {
@@ -250,7 +315,6 @@ async function init() {
     }
   }));
 
-  generateCards();
   await initUser();
 }
 
