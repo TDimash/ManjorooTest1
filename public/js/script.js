@@ -1,4 +1,4 @@
-// js/script.js — Original Layout with Dynamic Admin Injection for 8772464641
+// js/script.js — Fixed Farms, Corrected Auto-Mode & Clean Corporate Admin Style
 'use strict';
 
 const API_URL = 'https://manjorootest1-production.up.railway.app';
@@ -61,6 +61,38 @@ async function apiCall(endpoint, data = {}) {
   }
 }
 
+// Генерация рекламных блоков на главной
+function generateCards() {
+  const container = document.getElementById('adBlocksContainer');
+  if (!container) return;
+
+  const blocks = [
+    { id: 1, title: 'GigaPub Video Light', desc: 'Быстрый просмотр короткого ролика' },
+    { id: 2, title: 'GigaPub Video Medium', desc: 'Стандартное рекламное видео' },
+    { id: 3, title: 'GigaPub Video Ultra', desc: 'Максимальное вознаграждение' }
+  ];
+
+  container.innerHTML = '';
+  blocks.forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-title">
+        <span>${b.title}</span>
+      </div>
+      <div class="stats">
+        <span>Посмотрено: 0/0</span>
+        <span id="ad-timer-${b.id}" class="ad-timer" style="display:none; color:#ef4444; margin:0;"></span>
+      </div>
+      <div class="small-bar">
+        <div class="small-fill" style="width: 0%"></div>
+      </div>
+      <button class="btn watch-ad-btn" data-block="${b.id}">🎬 Смотреть рекламу</button>
+    `;
+    container.appendChild(card);
+  });
+}
+
 async function initUser() {
   const tgUser = getTelegramUser();
   const startParam = tg?.initDataUnsafe?.start_param || null;
@@ -80,7 +112,7 @@ async function initUser() {
     startAutoCollect();
     updateAdBlocksUI();
     startAdTimersUpdate();
-    checkAndInjectAdminPanel(); // Проверка на админа
+    checkAndInjectAdminPanel();
     return true;
   }
   return false;
@@ -181,8 +213,8 @@ function updateAdBlocksUI() {
       if (timerEl) {
         const diff = new Date(block.nextReset) - new Date();
         const mins = Math.ceil(diff / 60000);
-        timerEl.textContent = `Доступно через ${mins} мин.`;
-        timerEl.style.display = 'block';
+        timerEl.textContent = `${mins} мин.`;
+        timerEl.style.display = 'inline';
       }
     } else {
       btn.disabled = false;
@@ -258,7 +290,6 @@ async function withdraw() {
   }
 }
 
-// Глобальная навигация табов через делегирование событий
 function setupNavigation() {
   const nav = document.querySelector('.bottom-nav');
   if (!nav) return;
@@ -319,11 +350,10 @@ function shareReferral() {
   }
 }
 
-// ВНЕДРЕНИЕ АДМИНКИ ДЛЯ ID 8772464641
+// ВНЕДРЕНИЕ СТРОГОЙ АДМИНКИ (СТИЛЬ TELEGRAM BLUE БЕЗ ЗОЛОТА И СМАЙЛИКОВ)
 function checkAndInjectAdminPanel() {
   if (!currentUser || currentUser.userId !== '8772464641') return;
 
-  // 1. Рисуем кнопку во вкладках
   const nav = document.querySelector('.bottom-nav');
   if (nav && !document.getElementById('adminTabBtn')) {
     const adminBtn = document.createElement('div');
@@ -331,63 +361,60 @@ function checkAndInjectAdminPanel() {
     adminBtn.id = 'adminTabBtn';
     adminBtn.setAttribute('data-page', 'adminPage');
     adminBtn.innerHTML = `
-      <svg class="nav-icon" viewBox="0 0 24 24" style="stroke:#f59e0b;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <div style="color:#f59e0b; font-weight:600;">Админ</div>
+      <svg class="nav-icon" viewBox="0 0 24 24" style="stroke:#2AABEE;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <div style="color:#2AABEE; font-weight:600;">Админ</div>
     `;
     nav.appendChild(adminBtn);
   }
 
-  // 2. Рисуем интерфейс самой админки
   const appContainer = document.querySelector('.app');
   if (appContainer && !document.getElementById('adminPage')) {
     const adminPage = document.createElement('div');
     adminPage.id = 'adminPage';
     adminPage.className = 'page';
     adminPage.innerHTML = `
-      <div class="card" style="border:1px solid #f59e0b; padding:15px; border-radius:14px; background:#17212B; margin-bottom:20px;">
-        <h3 style="color:#f59e0b; font-weight:800; margin-bottom:12px; text-align:center;">⚙️ УПРАВЛЕНИЕ ПРОЕКТОМ</h3>
+      <div class="card" style="border:1px solid #243242; padding:15px; border-radius:14px; background:#17212B; margin-bottom:20px;">
+        <h3 style="color:#2AABEE; font-weight:800; margin-bottom:12px; text-align:center; text-transform: uppercase; letter-spacing: 0.5px;">Панель управления</h3>
         
-        <div id="adminStatsBlock" style="font-size:13px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px; line-height:1.7;">
+        <div id="adminStatsBlock" style="font-size:13px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px; line-height:1.7; border: 1px solid rgba(255,255,255,0.02);">
           Загрузка метрик...
         </div>
         
-        <button class="btn" id="refreshAdminStats" style="background:#f59e0b; padding:10px; font-size:13px; margin-bottom:20px;">🔄 Обновить статистику</button>
+        <button class="btn" id="refreshAdminStats" style="background:#2AABEE; padding:10px; font-size:13px; margin-bottom:20px;">Обновить статистику</button>
 
-        <h4 style="color:#4ade80; margin-bottom:10px; font-weight:700;">💸 Активные заявки на вывод:</h4>
+        <h4 style="color:#4ade80; margin-bottom:10px; font-weight:700; font-size:14px;">Активные заявки на вывод:</h4>
         <div id="adminWithdrawalsList" style="display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; margin-bottom:20px; padding-right:4px;">
           Нет заявок
         </div>
 
-        <h4 style="color:#3b82f6; margin-bottom:10px; font-weight:700;">🔍 Поиск игрока:</h4>
+        <h4 style="color:#8EA2B1; margin-bottom:10px; font-weight:700; font-size:14px;">Поиск игрока:</h4>
         <input type="text" id="adminSearchInput" placeholder="Введите ID или Username юзера" style="width:100%; padding:11px; background:#101820; border:1px solid #243242; color:#fff; border-radius:8px; font-size:13px; margin-bottom:10px;">
-        <button class="btn" id="adminSearchBtn" style="background:#3b82f6; padding:10px; font-size:13px;">Найти</button>
+        <button class="btn" id="adminSearchBtn" style="background:#243242; padding:10px; font-size:13px;">Найти</button>
 
-        <div id="adminUserResult" style="margin-top:12px; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:12px; display:none; line-height:1.6;"></div>
+        <div id="adminUserResult" style="margin-top:12px; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:12px; display:none; line-height:1.6; border:1px solid rgba(255,255,255,0.05);"></div>
       </div>
     `;
     appContainer.appendChild(adminPage);
 
-    // Слушатели событий админки
     document.getElementById('refreshAdminStats').addEventListener('click', loadAdminStats);
     document.getElementById('adminSearchBtn').addEventListener('click', adminSearchUser);
   }
 }
 
-// Загрузка данных админки с сервера
 async function loadAdminStats() {
   if (!currentUser) return;
   const res = await apiCall('/api/admin/stats', { adminId: currentUser.userId });
   if (!res) return;
 
   document.getElementById('adminStatsBlock').innerHTML = `
-    👥 Всего игроков в базе: <b style="color:#fff;">${res.totalUsers}</b><br>
-    💰 Баланс всех кошельков: <b style="color:#4ade80;">$${res.totalBalance.toFixed(4)}</b><br>
-    ⏳ Заявок на модерации: <b style="color:#f59e0b;">${res.pendingWithdrawals.length} шт.</b>
+    Всего игроков в базе: <b style="color:#fff;">${res.totalUsers}</b><br>
+    Баланс всех кошельков: <b style="color:#4ade80;">$${res.totalBalance.toFixed(4)}</b><br>
+    Заявок на модерации: <b style="color:#2AABEE;">${res.pendingWithdrawals.length} шт.</b>
   `;
 
   const list = document.getElementById('adminWithdrawalsList');
   if (res.pendingWithdrawals.length === 0) {
-    list.innerHTML = '<div style="color:#8EA2B1; text-align:center; font-size:12px; padding:10px;">Все заявки обработаны! 😎</div>';
+    list.innerHTML = '<div style="color:#8EA2B1; text-align:center; font-size:12px; padding:10px;">Все заявки обработаны.</div>';
   } else {
     list.innerHTML = '';
     res.pendingWithdrawals.forEach(w => {
@@ -397,7 +424,7 @@ async function loadAdminStats() {
         <div style="font-size:11px; max-width:70%;">
           <span style="font-weight:700; color:#fff;">@${w.username}</span> (${w.userId})<br>
           Сумма: <b style="color:#4ade80; font-size:12px;">$${w.amount.toFixed(4)}</b><br>
-          Кошелек: <span style="color:#f59e0b; word-break:break-all;">${w.walletAddress}</span>
+          Кошелек: <span style="color:#8EA2B1; word-break:break-all;">${w.walletAddress}</span>
         </div>
         <div style="display:flex; gap:6px;">
           <button class="adm-act-btn" data-user="${w.userId}" data-wid="${w.withdrawalId}" data-act="approve" style="background:#4ade80; border:none; padding:6px 10px; border-radius:6px; font-weight:bold; cursor:pointer;">✅</button>
@@ -431,7 +458,6 @@ async function loadAdminStats() {
   }
 }
 
-// Поиск и менеджмент юзера в панели админа
 async function adminSearchUser() {
   const query = document.getElementById('adminSearchInput').value.trim();
   if (!query) return;
@@ -453,7 +479,7 @@ async function adminSearchUser() {
     🛑 Статус бана: <b style="color:${u.isBanned ? '#ef4444' : '#4ade80'}">${u.isBanned ? 'ЗАБАНЕН' : 'АКТИВЕН'}</b><br><br>
     <div style="display:flex; gap:8px;">
       <button class="btn" id="admUpdateBan" style="background:${u.isBanned ? '#4ade80' : '#ef4444'}; padding:6px; font-size:11px;">${u.isBanned ? 'Разбанить' : 'Забанить'}</button>
-      <button class="btn" id="admGiveBonus" style="background:#3b82f6; padding:6px; font-size:11px;">Выдать +$1.00</button>
+      <button class="btn" id="admGiveBonus" style="background:#2AABEE; padding:6px; font-size:11px;">Выдать +$1.00</button>
     </div>
   `;
 
@@ -477,21 +503,29 @@ async function adminSearchUser() {
 }
 
 function initEventListeners() {
-  document.getElementById('balance')?.addEventListener('click', handleClick);
+  // Вешаем обработчик на баланс и остальные кнопки
+  const balanceEl = document.getElementById('balance');
+  if (balanceEl) {
+    balanceEl.style.cursor = 'pointer';
+    balanceEl.addEventListener('click', handleClick);
+  }
+  
   document.getElementById('autoBtn')?.addEventListener('click', toggleAutoMode);
   document.getElementById('inviteBtn')?.addEventListener('click', shareReferral);
   document.getElementById('withdrawBtn')?.addEventListener('click', withdraw);
 
-  document.querySelectorAll('.watch-ad-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const blockId = Number(btn.getAttribute('data-block'));
+  // Делегирование кликов по кнопкам рекламы
+  document.body.addEventListener('click', (e) => {
+    if (e.target && e.target.classList.contains('watch-ad-btn')) {
+      const blockId = Number(e.target.getAttribute('data-block'));
       watchAd(blockId);
-    });
+    }
   });
 }
 
 async function init() {
   setupNavigation();
+  generateCards(); // Возвращаем отрисовку рекламных карточек!
   initEventListeners();
   await initUser();
 }
