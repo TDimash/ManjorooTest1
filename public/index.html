@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Duck Ads — Зарабатывай с рекламой</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script data-project-id="6724">
+      !function(){
+        var s=document.currentScript,p=s.getAttribute('data-project-id')||'default';
+        var d=['https://ad.gigapub.tech','https://ru-ad.gigapub.tech'],i=0,t,sc;
+        function l(){
+          sc=document.createElement('script');
+          sc.async=true;
+          sc.src=d[i]+'/script?id='+p;
+          clearTimeout(t);
+          t=setTimeout(function(){
+            sc.onload=sc.onerror=null;
+            sc.src='';
+            if(++i<d.length)l();
+          },15000);
+          sc.onload=function(){clearTimeout(t)};
+          sc.onerror=function(){clearTimeout(t);if(++i<d.length)l()};
+          document.head.appendChild(sc);
+        }
+        l();
+      }();
+    </script>
+</head>
+<body>
+<div class="app">
+    <div class="top-bar">
+        <div class="user">
+            <img id="avatar" class="avatar" src="https://i.pravatar.cc/100" alt="avatar">
+            <div>
+                <div class="name" id="username">User</div>
+                <div class="uid" id="userid">ID: 000000</div>
+            </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <div class="balance-box">
+                <div style="font-size:10px;color:#8EA2B1" class="balance-label">BALANCE</div>
+                <div class="balance-mini" id="balanceTop">$0.0000</div>
+            </div>
+            <button class="lang-btn" id="langBtn">RU</button>
+        </div>
+    </div>
+    <div class="page active" id="home">
+        <div class="top-card">
+            <div class="balance" id="balance">$0.0000</div>
+            <div class="level-row">
+                <div class="level" id="level">Level 1 • 0/100</div>
+                <div class="next-level-reward" id="nextLevelReward">
+                    <span class="arrow-icon">↑</span>
+                    <span class="next-value" id="nextRewardValue">+$0.0018</span>
+                </div>
+            </div>
+            <div class="progress"><div class="fill" id="xpFill"></div></div>
+            <button class="btn" id="autoBtn">AUTO ON</button>
+        </div>
+        <div id="cards"></div>
+    </div>
+    <div class="page" id="friends">
+        <div class="card">
+            <div>👥 Друзья</div>
+            <div id="inviteLink" style="margin-top: 12px;">
+                <button class="btn" id="inviteBtn" style="background: #2AABEE;">📨 Пригласить друга</button>
+                <div style="font-size: 12px; color: #8EA2B1; margin-top: 12px; text-align: center;" id="referralCount"></div>
+            </div>
+            <div id="leaderboardList" style="margin-top: 20px;">
+                <div style="font-weight:700; margin-bottom:12px;">🏆 Топ игроков</div>
+                <div id="leaderboardContent">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+    <div class="page" id="boosts">
+        <div class="card">
+            <div>⚡ Бусты</div>
+            <div style="font-size:12px; color:#8EA2B1; margin-top:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0;">
+                    <span>🎯 Удвоение дохода</span>
+                    <button class="btn" style="width:auto; padding:8px 16px; margin:0;" id="boostDoubleBtn">Купить за 5000</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="page" id="tasks">
+        <div class="card">
+            <div>✅ Задания</div>
+            <div style="font-size:12px; color:#8EA2B1; margin-top:12px;" id="tasksList">
+                <div class="task-item" style="display:flex; justify-content:space-between; padding:10px 0;">
+                    <span>📢 Подписаться на канал</span>
+                    <button class="task-btn" data-task="subscribe">+1000</button>
+                </div>
+                <div class="task-item" style="display:flex; justify-content:space-between; padding:10px 0;">
+                    <span>🔄 Поделиться с другом</span>
+                    <button class="task-btn" data-task="share">+500</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="page" id="wallet">
+        <div class="card">
+            <div>💎 Кошелек</div>
+            <div style="font-size:12px; color:#8EA2B1; margin-top:12px;" id="walletInfo">
+                <div style="text-align:center; padding:10px;">
+                    <div style="font-size:24px; font-weight:800;" id="walletBalance">$0.0000</div>
+                    <button class="btn" id="withdrawBtn" style="margin-top:15px; background:#4ade80;">💸 Вывести средства</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="bottom-nav">
+    <div class="nav-item active" data-page="home">
+        <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+        <div>Главная</div>
+    </div>
+    <div class="nav-item" data-page="friends">
+        <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M4 20c0-3 3-5 5-5s5 2 5 5"/><path d="M13 20c.3-2.5 2.2-4.5 4.5-4.5S22 17.5 22 20"/></svg>
+        <div>Друзья</div>
+    </div>
+    <div class="nav-item" data-page="boosts">
+        <svg class="nav-icon" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 10-14h-7l0-6z"/></svg>
+        <div>Бусты</div>
+    </div>
+    <div class="nav-item" data-page="tasks">
+        <svg class="nav-icon" viewBox="0 0 24 24"><path d="M9 11l2 2 4-5"/><path d="M5 4h14v16H5z"/></svg>
+        <div>Задания</div>
+    </div>
+    <div class="nav-item" data-page="wallet">
+        <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 7h15a3 3 0 013 3v7a3 3 0 01-3 3H6a3 3 0 01-3-3V7z"/><path d="M16 11h5v4h-5a2 2 0 010-4z"/></svg>
+        <div>Кошелек</div>
+    </div>
+</div>
+<script src="js/script.js"></script>
+</body>
+</html>
